@@ -1,0 +1,87 @@
+brooklyn.catalog:
+  items:
+  - "https://raw.githubusercontent.com/brooklyncentral/common-catalog-utils/master/common-tests/src/main/resources/commontests/common.tests.bom"
+  - id: brooklyn-riak-cluster-tests
+    version: 0.10.0-SNAPSHOT
+    itemType: template
+    iconUrl: classpath://org/apache/brooklyn/entity/nosql/riak/riak.png
+    name: Riak Cluster tests
+    item:
+      services:
+      - type: brooklyn-riak-cluster
+        id: target-cluster
+        brooklyn.config:
+          cluster.initial.size: 1
+        firstMemberSpec:
+          $brooklyn:entitySpec:
+            type: org.apache.brooklyn.entity.nosql.riak.RiakNode
+            brooklyn.config:
+              id: first-node
+              camp.plan.id: first-node
+      - type: test-case
+        name: Riak Cluster tests
+        brooklyn.config:
+          timeout: 1h
+          timeout.initialStartup: 1h
+          targetId: target-cluster
+        brooklyn.children:
+        - type: assert-up-and-running-initial
+          name: "1. Riak Cluster up and running"
+        - type: test-http-status-200
+          name: "2. Riak Admin console reachable"
+          url: $brooklyn:entity("target-cluster").attributeWhenReady("main.uri")
+        - type: invoke-effector
+          name: "3. Resize cluster to 2"
+          target: $brooklyn:entity("target-cluster")
+          effector: resize
+          params:
+            desiredSize: 2
+        - type: assert-sensor
+          name: "4. Size of cluster increased to 2"
+          targetId: target-cluster
+          sensor: group.members.count
+          assert:
+            equals: 2
+        - type: test-http-status-200
+          name: "5. Riak Admin console still reachable"
+          url: $brooklyn:entity("target-cluster").attributeWhenReady("main.uri")
+        - type: test-case
+          name: "6. Inserted values are replicated across all nodes"
+          brooklyn.children:
+          - type: test-http-status-200
+            name: "6.1. Value inserted on first Riak node"
+            target: $brooklyn:entity("first-node")
+            url: $brooklyn:formatString("http://%s:%s/riak/test/doc?returnbody=true", $brooklyn:entity("first-node").attributeWhenReady("host.name"), $brooklyn:entity("first-node").attributeWhenReady("riak.webPort"))
+            method: PUT
+            headers:
+                Content-Type: application/json
+                X-Riak-Vclock: a85hYGBgzGDKBVIszMk55zKYEhnzWBlKIniO8mUBAA==
+            body: '{"bar":"baz"}'
+          - type: loop-test-case
+            name: "6.2. Value replicated on all Riak nodes"
+            target: $brooklyn:entity("target-cluster")
+            testSpec:
+              $brooklyn:entitySpec:
+                type: test-http-status-200
+                url: $brooklyn:formatString("http://%s:%s/riak/test/doc", $brooklyn:entity($brooklyn:config("target")).attributeWhenReady("host.name"), $brooklyn:entity($brooklyn:config("target")).attributeWhenReady("riak.webPort"))
+        - type: test-case
+          name: "7. Deleted values are removed across all nodes"
+          brooklyn.children:
+          - type: test-http
+            name: "7.1. Value deleted on first Riak node"
+            target: $brooklyn:entity("first-node")
+            url: $brooklyn:formatString("http://%s:%s/riak/test/doc", $brooklyn:entity("first-node").attributeWhenReady("host.name"), $brooklyn:entity("first-node").attributeWhenReady("riak.webPort"))
+            method: DELETE
+            applyAssertionTo: status
+            assert:
+            - isEqualTo: 204
+          - type: loop-test-case
+            name: "7.2. Value removed on all Riak nodes"
+            target: $brooklyn:entity("target-cluster")
+            testSpec:
+              $brooklyn:entitySpec:
+                type: test-http
+                url: $brooklyn:formatString("http://%s:%s/riak/test/doc", $brooklyn:entity($brooklyn:config("target")).attributeWhenReady("host.name"), $brooklyn:entity($brooklyn:config("target")).attributeWhenReady("riak.webPort"))
+                applyAssertionTo: status
+                assert:
+                - isEqualTo: 404
