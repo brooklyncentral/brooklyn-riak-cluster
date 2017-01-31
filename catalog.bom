@@ -21,7 +21,7 @@ brooklyn.catalog:
   version: 0.10.0-SNAPSHOT
   name: Riak Cluster
   description: Riak is a distributed NoSQL key-value data store that offers extremely high availability, fault tolerance, operational simplicity and scalability.
-  iconUrl: classpath://org/apache/brooklyn/entity/nosql/riak/riak.png
+  iconUrl: https://raw.githubusercontent.com/brooklyncentral/brooklyn-riak-cluster/master/riak.png
   itemType: template
   license: Apache-2.0
   publish:
